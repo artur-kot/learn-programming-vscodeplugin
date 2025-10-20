@@ -184,10 +184,10 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand('learnProgramming.nextExercise', async () => {
         if (!currentExercise) {
-          // Open first unlocked exercise
-          const exercises = courseManager.getExercises();
-          if (exercises.length > 0) {
-            await vscode.commands.executeCommand('learnProgramming.openExercise', exercises[0]);
+          // Open first incomplete exercise
+          const exercise = await getFirstIncompleteExercise();
+          if (exercise) {
+            await vscode.commands.executeCommand('learnProgramming.openExercise', exercise);
           }
           return;
         }
@@ -273,11 +273,11 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage(
       `Welcome to ${course.name}! Click on an exercise to get started.`,
       'Start Learning'
-    ).then(selection => {
+    ).then(async selection => {
       if (selection === 'Start Learning') {
-        const exercises = courseManager.getExercises();
-        if (exercises.length > 0) {
-          vscode.commands.executeCommand('learnProgramming.openExercise', exercises[0]);
+        const exercise = await getFirstIncompleteExercise();
+        if (exercise) {
+          vscode.commands.executeCommand('learnProgramming.openExercise', exercise);
         }
       }
     });
@@ -328,6 +328,24 @@ async function showHint(exercise: Exercise): Promise<void> {
 async function updateTreeViewDescription(treeView: vscode.TreeView<any>): Promise<void> {
   const summary = await exerciseProvider.getProgressSummary();
   treeView.description = `${summary.completed}/${summary.total} (${summary.percentage}%)`;
+}
+
+async function getFirstIncompleteExercise(): Promise<Exercise | undefined> {
+  const exercises = courseManager.getExercises();
+  if (exercises.length === 0) {
+    return undefined;
+  }
+
+  // Check each exercise to find first incomplete one
+  for (const exercise of exercises) {
+    const progress = await progressTracker.getProgress(exercise.id);
+    if (!progress || !progress.completed) {
+      return exercise;
+    }
+  }
+
+  // All exercises completed, return first one
+  return exercises[0];
 }
 
 export function deactivate() {
