@@ -1,0 +1,259 @@
+import * as vscode from 'vscode';
+import * as path from 'path';
+import { CourseManager } from './courseManager';
+import { ProgressTracker } from './progressTracker';
+import { ExerciseTreeDataProvider } from './exerciseProvider';
+import { TestRunner } from './testRunner';
+import { ExerciseWebviewProvider } from './webviewProvider';
+import { HintProvider } from './hintProvider';
+import { Exercise } from './types';
+
+let courseManager: CourseManager;
+let progressTracker: ProgressTracker;
+let exerciseProvider: ExerciseTreeDataProvider;
+let testRunner: TestRunner;
+let webviewProvider: ExerciseWebviewProvider;
+let hintProvider: HintProvider;
+let currentExercise: Exercise | undefined;
+
+export async function activate(context: vscode.ExtensionContext) {
+  console.log('Learn Programming extension is now active');
+
+  // Get workspace folder
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    vscode.window.showErrorMessage('Please open a workspace folder to use Learn Programming');
+    return;
+  }
+
+  const workspacePath = workspaceFolders[0].uri.fsPath;
+
+  try {
+    // Initialize managers
+    courseManager = new CourseManager(workspacePath);
+    const course = await courseManager.loadCourse();
+
+    progressTracker = new ProgressTracker(context, course.name);
+    await progressTracker.initialize();
+
+    testRunner = new TestRunner(workspacePath, progressTracker);
+    hintProvider = new HintProvider(progressTracker);
+
+    // Initialize providers
+    exerciseProvider = new ExerciseTreeDataProvider(courseManager, progressTracker);
+
+    webviewProvider = new ExerciseWebviewProvider(
+      context,
+      (exercise) => runTests(exercise),
+      (exercise) => showHint(exercise),
+      () => vscode.commands.executeCommand('learnProgramming.nextExercise')
+    );
+
+    // Register tree view
+    const treeView = vscode.window.createTreeView('exerciseList', {
+      treeDataProvider: exerciseProvider,
+      showCollapseAll: false
+    });
+
+    // Update tree view description with progress
+    updateTreeViewDescription(treeView);
+
+    context.subscriptions.push(treeView);
+
+    // Register commands
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.openCourse', async () => {
+        try {
+          await courseManager.loadCourse();
+          exerciseProvider.refresh();
+          vscode.window.showInformationMessage('Course reloaded successfully');
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to reload course: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.openExercise', async (exercise: Exercise) => {
+        currentExercise = exercise;
+
+        // Open exercise file in editor
+        const config = vscode.workspace.getConfiguration('learnProgramming');
+        const autoOpen = config.get<boolean>('autoOpenExercise', true);
+
+        if (autoOpen) {
+          const doc = await vscode.workspace.openTextDocument(exercise.exerciseFile);
+          await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+        }
+
+        // Show webview with instructions
+        await webviewProvider.show(exercise);
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.runTests', async (exercise?: Exercise) => {
+        const targetExercise = exercise || currentExercise;
+
+        if (!targetExercise) {
+          vscode.window.showWarningMessage('Please select an exercise first');
+          return;
+        }
+
+        const course = courseManager.getCourse();
+        if (!course) {
+          vscode.window.showErrorMessage('No course loaded');
+          return;
+        }
+
+        await runTests(targetExercise);
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.showHint', async (exercise?: Exercise) => {
+        const targetExercise = exercise || currentExercise;
+
+        if (!targetExercise) {
+          vscode.window.showWarningMessage('Please select an exercise first');
+          return;
+        }
+
+        await showHint(targetExercise);
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.nextExercise', async () => {
+        if (!currentExercise) {
+          // Open first unlocked exercise
+          const exercises = courseManager.getExercises();
+          if (exercises.length > 0) {
+            await vscode.commands.executeCommand('learnProgramming.openExercise', exercises[0]);
+          }
+          return;
+        }
+
+        const nextExercise = courseManager.getNextExercise(currentExercise.id);
+        if (nextExercise) {
+          // Check if unlocked
+          const exerciseIds = courseManager.getExercises().map(ex => ex.id);
+          const index = courseManager.getExerciseIndex(nextExercise.id);
+          const isUnlocked = await progressTracker.isExerciseUnlocked(index, exerciseIds);
+
+          if (isUnlocked) {
+            await vscode.commands.executeCommand('learnProgramming.openExercise', nextExercise);
+          } else {
+            vscode.window.showInformationMessage(
+              'Complete the current exercise to unlock the next one'
+            );
+          }
+        } else {
+          vscode.window.showInformationMessage('You have completed all exercises! 🎉');
+        }
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.previousExercise', async () => {
+        if (!currentExercise) {
+          return;
+        }
+
+        const prevExercise = courseManager.getPreviousExercise(currentExercise.id);
+        if (prevExercise) {
+          await vscode.commands.executeCommand('learnProgramming.openExercise', prevExercise);
+        } else {
+          vscode.window.showInformationMessage('This is the first exercise');
+        }
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.resetProgress', async () => {
+        const confirm = await vscode.window.showWarningMessage(
+          'Are you sure you want to reset all progress? This cannot be undone.',
+          { modal: true },
+          'Reset Progress'
+        );
+
+        if (confirm === 'Reset Progress') {
+          await progressTracker.resetProgress();
+          exerciseProvider.refresh();
+          await updateTreeViewDescription(treeView);
+          vscode.window.showInformationMessage('Progress reset successfully');
+        }
+      })
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.refreshExercises', () => {
+        exerciseProvider.refresh();
+        updateTreeViewDescription(treeView);
+      })
+    );
+
+    // Show welcome message
+    vscode.window.showInformationMessage(
+      `Welcome to ${course.name}! Click on an exercise to get started.`,
+      'Start Learning'
+    ).then(selection => {
+      if (selection === 'Start Learning') {
+        const exercises = courseManager.getExercises();
+        if (exercises.length > 0) {
+          vscode.commands.executeCommand('learnProgramming.openExercise', exercises[0]);
+        }
+      }
+    });
+
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to initialize extension: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+async function runTests(exercise: Exercise): Promise<void> {
+  const course = courseManager.getCourse();
+  if (!course) {
+    return;
+  }
+
+  try {
+    await testRunner.runTest(exercise, course.language);
+    exerciseProvider.refresh();
+
+    // Update tree view description
+    const treeView = vscode.window.createTreeView('exerciseList', {
+      treeDataProvider: exerciseProvider
+    });
+    await updateTreeViewDescription(treeView);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to run tests: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+async function showHint(exercise: Exercise): Promise<void> {
+  await hintProvider.generateHint(exercise);
+}
+
+async function updateTreeViewDescription(treeView: vscode.TreeView<any>): Promise<void> {
+  const summary = await exerciseProvider.getProgressSummary();
+  treeView.description = `${summary.completed}/${summary.total} (${summary.percentage}%)`;
+}
+
+export function deactivate() {
+  if (testRunner) {
+    testRunner.dispose();
+  }
+  if (progressTracker) {
+    progressTracker.close();
+  }
+  if (webviewProvider) {
+    webviewProvider.dispose();
+  }
+}

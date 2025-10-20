@@ -1,0 +1,182 @@
+{
+  "name": "learn-programming",
+  "displayName": "Learn Programming",
+  "description": "Interactive programming courses with AI-powered hints, progressive exercises, and multi-language support",
+  "version": "0.1.0",
+  "publisher": "ArturKot",
+  "author": {
+    "name": "Artur Kot"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Education",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "learning",
+    "tutorial",
+    "education",
+    "exercises",
+    "javascript",
+    "python",
+    "go",
+    "rust",
+    "ai",
+    "hints"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/course.json",
+    "onCommand:learnProgramming.openCourse"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Learn Programming",
+      "properties": {
+        "learnProgramming.ollamaModel": {
+          "type": "string",
+          "default": "llama2",
+          "description": "Ollama model to use for hint generation"
+        },
+        "learnProgramming.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama API URL"
+        },
+        "learnProgramming.enableHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI-powered hints"
+        },
+        "learnProgramming.autoOpenExercise": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open exercise file when selected"
+        },
+        "learnProgramming.showTestOutputInTerminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show test output in integrated terminal instead of output channel"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "learnProgramming.openCourse",
+        "title": "Learn Programming: Open Course"
+      },
+      {
+        "command": "learnProgramming.runTests",
+        "title": "Learn Programming: Run Tests",
+        "icon": "$(play)"
+      },
+      {
+        "command": "learnProgramming.showHint",
+        "title": "Learn Programming: Get Hint",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "learnProgramming.nextExercise",
+        "title": "Learn Programming: Next Exercise",
+        "icon": "$(chevron-right)"
+      },
+      {
+        "command": "learnProgramming.previousExercise",
+        "title": "Learn Programming: Previous Exercise",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "learnProgramming.resetProgress",
+        "title": "Learn Programming: Reset Progress"
+      },
+      {
+        "command": "learnProgramming.openExercise",
+        "title": "Learn Programming: Open Exercise"
+      },
+      {
+        "command": "learnProgramming.refreshExercises",
+        "title": "Learn Programming: Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "learn-programming",
+          "title": "Learn Programming",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "learn-programming": [
+        {
+          "id": "exerciseList",
+          "name": "Exercises"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "learnProgramming.refreshExercises",
+          "when": "view == exerciseList",
+          "group": "navigation"
+        },
+        {
+          "command": "learnProgramming.runTests",
+          "when": "view == exerciseList",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "learnProgramming.runTests",
+          "when": "view == exerciseList && viewItem == unlocked",
+          "group": "inline"
+        },
+        {
+          "command": "learnProgramming.showHint",
+          "when": "view == exerciseList && viewItem == unlocked",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.7",
+    "node-fetch": "^2.7.0",
+    "markdown-it": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "@types/sqlite3": "^3.1.11",
+    "@types/markdown-it": "^13.0.7",
+    "typescript": "^5.3.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "eslint": "^8.56.0",
+    "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arturkot/learn-programming-vscode.git"
+  },
+  "icon": "media/icon.png",
+  "license": "MIT"
+}

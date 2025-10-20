@@ -1,0 +1,11 @@
+{
+  "name": "javascript-basics-course",
+  "version": "1.0.0",
+  "description": "JavaScript basics course exercises",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "JavaScript Basics",
+  "description": "Learn the fundamentals of JavaScript programming",
+  "author": "Learn Programming Team",
+  "version": "1.0.0",
+  "language": "javascript",
+  "exercises": [
+    {
+      "id": "01-hello-world",
+      "title": "Hello World",
+      "description": "Your first JavaScript function",
+      "order": 1
+    },
+    {
+      "id": "02-variables",
+      "title": "Variables and Data Types",
+      "description": "Learn about variables, strings, numbers, and booleans",
+      "order": 2
+    },
+    {
+      "id": "03-functions",
+      "title": "Functions",
+      "description": "Create and use functions with parameters and return values",
+      "order": 3
+    }
+  ]
+}
