@@ -50,8 +50,11 @@ export class ExerciseWebviewProvider {
         message => {
           switch (message.command) {
             case 'runTests':
+              console.log('Webview runTests - currentExercise:', this.currentExercise);
               if (this.currentExercise) {
                 this.onRunTests(this.currentExercise);
+              } else {
+                console.error('No currentExercise set in webview');
               }
               break;
             case 'showHint':

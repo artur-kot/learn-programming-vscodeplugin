@@ -74,6 +74,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "learnProgramming.runAllTests",
+        "title": "Learn Programming: Run All Tests",
+        "icon": "$(run-all)"
+      },
+      {
         "command": "learnProgramming.showHint",
         "title": "Learn Programming: Get Hint",
         "icon": "$(lightbulb)"
@@ -127,7 +132,7 @@
           "group": "navigation"
         },
         {
-          "command": "learnProgramming.runTests",
+          "command": "learnProgramming.runAllTests",
           "when": "view == exerciseList",
           "group": "navigation"
         }

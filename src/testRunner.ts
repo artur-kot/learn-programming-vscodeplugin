@@ -15,7 +15,18 @@ export class TestRunner {
     this.outputChannel = vscode.window.createOutputChannel('Learn Programming: Tests');
   }
 
-  async runTest(exercise: Exercise, courseLanguage: string): Promise<TestOutput> {
+  async runTest(exercise: Exercise, courseLanguage: string, options?: { silent?: boolean }): Promise<TestOutput> {
+    const silent = options?.silent || false;
+
+    // Validate exercise object
+    if (!exercise || !exercise.id || !exercise.title) {
+      const error = 'Invalid exercise object - exercise data is missing';
+      this.outputChannel.clear();
+      this.outputChannel.show(true);
+      this.outputChannel.appendLine(`Error: ${error}`);
+      throw new Error(error);
+    }
+
     // Cancel any running test
     this.cancelRunningTest();
 
@@ -24,10 +35,31 @@ export class TestRunner {
       throw new Error(`Unsupported language: ${courseLanguage}`);
     }
 
-    this.outputChannel.clear();
-    this.outputChannel.show(true);
+    if (!silent) {
+      this.outputChannel.clear();
+      this.outputChannel.show(true);
+    }
     this.outputChannel.appendLine(`Running tests for: ${exercise.title}\n`);
+    this.outputChannel.appendLine(`Exercise ID: ${exercise.id}`);
+    this.outputChannel.appendLine(`Test file: ${exercise.testFile}`);
+    this.outputChannel.appendLine(`Working directory: ${this.workspacePath}\n`);
     this.outputChannel.appendLine('='.repeat(60));
+
+    // For silent mode, skip the progress notification
+    if (silent) {
+      const result = await this.executeTest(exercise, langConfig, undefined);
+
+      // Update progress tracker
+      await this.progressTracker.incrementTestRuns();
+
+      if (result.result === TestResult.Passed) {
+        await this.progressTracker.markCompleted(exercise.id);
+      } else if (result.result === TestResult.Failed) {
+        await this.progressTracker.markAttempted(exercise.id);
+      }
+
+      return result;
+    }
 
     return vscode.window.withProgress(
       {
@@ -48,29 +80,35 @@ export class TestRunner {
 
         if (result.result === TestResult.Passed) {
           await this.progressTracker.markCompleted(exercise.id);
-          vscode.window.showInformationMessage(
-            `✓ ${exercise.title} completed! Tests passed.`,
-            'Next Exercise'
-          ).then(selection => {
-            if (selection === 'Next Exercise') {
-              vscode.commands.executeCommand('learnProgramming.nextExercise');
-            }
-          });
+          if (!silent) {
+            vscode.window.showInformationMessage(
+              `✓ ${exercise.title} completed! Tests passed.`,
+              'Next Exercise'
+            ).then(selection => {
+              if (selection === 'Next Exercise') {
+                vscode.commands.executeCommand('learnProgramming.nextExercise');
+              }
+            });
+          }
         } else if (result.result === TestResult.Failed) {
           await this.progressTracker.markAttempted(exercise.id);
-          vscode.window.showErrorMessage(
-            `✗ Tests failed for ${exercise.title}`,
-            'Get Hint',
-            'Try Again'
-          ).then(selection => {
-            if (selection === 'Get Hint') {
-              vscode.commands.executeCommand('learnProgramming.showHint', exercise);
-            } else if (selection === 'Try Again') {
-              vscode.commands.executeCommand('learnProgramming.runTests', exercise);
-            }
-          });
+          if (!silent) {
+            vscode.window.showErrorMessage(
+              `✗ Tests failed for ${exercise.title}`,
+              'Get Hint',
+              'Try Again'
+            ).then(selection => {
+              if (selection === 'Get Hint') {
+                vscode.commands.executeCommand('learnProgramming.showHint', exercise);
+              } else if (selection === 'Try Again') {
+                vscode.commands.executeCommand('learnProgramming.runTests', exercise);
+              }
+            });
+          }
         } else {
-          vscode.window.showErrorMessage(`Error running tests: ${result.output}`);
+          if (!silent) {
+            vscode.window.showErrorMessage(`Error running tests: ${result.output}`);
+          }
         }
 
         return result;
@@ -81,14 +119,14 @@ export class TestRunner {
   private async executeTest(
     exercise: Exercise,
     langConfig: any,
-    progress: vscode.Progress<{ message?: string; increment?: number }>
+    progress?: vscode.Progress<{ message?: string; increment?: number }>
   ): Promise<TestOutput> {
     return new Promise((resolve) => {
       let output = '';
       const command = langConfig.testCommand[0];
       const args = this.buildTestArgs(exercise, langConfig);
 
-      progress.report({ message: 'Starting tests...' });
+      progress?.report({ message: 'Starting tests...' });
 
       this.currentProcess = spawn(command, args, {
         cwd: this.workspacePath,
@@ -100,7 +138,7 @@ export class TestRunner {
         const text = data.toString();
         output += text;
         this.outputChannel.append(text);
-        progress.report({ message: 'Running tests...' });
+        progress?.report({ message: 'Running tests...' });
       });
 
       this.currentProcess.stderr?.on('data', (data: Buffer) => {
@@ -145,8 +183,11 @@ export class TestRunner {
 
     switch (langConfig.language) {
       case 'javascript':
-        // Jest: run specific test file
-        args.push('--testPathPattern', `${exercise.id}.*\\.test\\.js$`);
+        // Jest: run specific test file using relative path
+        const relativeTestPath = path.relative(this.workspacePath, exercise.testFile);
+        // Normalize path separators for Jest (use forward slashes)
+        const normalizedPath = relativeTestPath.replace(/\\/g, '/');
+        args.push('--testPathPattern', normalizedPath);
         args.push('--no-coverage');
         break;
 

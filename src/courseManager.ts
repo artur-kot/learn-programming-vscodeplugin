@@ -100,11 +100,20 @@ export class CourseManager {
         readmeFile: readmeFile || ''
       };
 
+      console.log(`Loaded exercise: ${metadata.id}`, {
+        id: exercise.id,
+        title: exercise.title,
+        exerciseFile: exercise.exerciseFile,
+        testFile: exercise.testFile,
+        path: exercise.path
+      });
+
       this.exercises.push(exercise);
     }
 
     // Sort by order
     this.exercises.sort((a, b) => a.order - b.order);
+    console.log(`Total exercises loaded: ${this.exercises.length}`);
   }
 
   private findFileInDirectory(dir: string, pattern: string): string {

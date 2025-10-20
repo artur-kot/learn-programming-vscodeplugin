@@ -6,6 +6,7 @@ import { ExerciseTreeDataProvider } from './exerciseProvider';
 import { TestRunner } from './testRunner';
 import { ExerciseWebviewProvider } from './webviewProvider';
 import { HintProvider } from './hintProvider';
+import { BatchTestRunner } from './batchTestRunner';
 import { Exercise } from './types';
 
 let courseManager: CourseManager;
@@ -14,6 +15,7 @@ let exerciseProvider: ExerciseTreeDataProvider;
 let testRunner: TestRunner;
 let webviewProvider: ExerciseWebviewProvider;
 let hintProvider: HintProvider;
+let batchTestRunner: BatchTestRunner;
 let currentExercise: Exercise | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -41,6 +43,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize providers
     exerciseProvider = new ExerciseTreeDataProvider(courseManager, progressTracker);
+    batchTestRunner = new BatchTestRunner(context, testRunner, exerciseProvider);
 
     webviewProvider = new ExerciseWebviewProvider(
       context,
@@ -77,6 +80,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand('learnProgramming.openExercise', async (exercise: Exercise) => {
+        console.log('openExercise called with:', exercise);
+        console.log('Exercise structure:', JSON.stringify(exercise, null, 2));
         currentExercise = exercise;
 
         // Open exercise file in editor
@@ -84,8 +89,13 @@ export async function activate(context: vscode.ExtensionContext) {
         const autoOpen = config.get<boolean>('autoOpenExercise', true);
 
         if (autoOpen) {
-          const doc = await vscode.workspace.openTextDocument(exercise.exerciseFile);
-          await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+          // Convert file path to URI for proper file system synchronization
+          const fileUri = vscode.Uri.file(exercise.exerciseFile);
+          const doc = await vscode.workspace.openTextDocument(fileUri);
+          await vscode.window.showTextDocument(doc, {
+            viewColumn: vscode.ViewColumn.One,
+            preview: false // Ensure file opens in a permanent tab, not preview mode
+          });
         }
 
         // Show webview with instructions
@@ -94,8 +104,37 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand('learnProgramming.runTests', async (exercise?: Exercise) => {
-        const targetExercise = exercise || currentExercise;
+      vscode.commands.registerCommand('learnProgramming.runTests', async (exerciseOrTreeItem?: any) => {
+        console.log('runTests command called with:', exerciseOrTreeItem);
+
+        // Check if batch tests are running
+        if (batchTestRunner.isTestRunning()) {
+          vscode.window.showWarningMessage(
+            'Cannot run individual test: "Run All Tests" is currently in progress. Please wait or cancel the batch run.'
+          );
+          return;
+        }
+
+        // Handle different argument types
+        let targetExercise: Exercise | undefined;
+
+        if (exerciseOrTreeItem) {
+          // Check if it's a TreeItem (from inline button) or Exercise (from other sources)
+          if ('exercise' in exerciseOrTreeItem) {
+            // It's an ExerciseTreeItem
+            console.log('Received ExerciseTreeItem, extracting exercise');
+            targetExercise = exerciseOrTreeItem.exercise;
+          } else if ('id' in exerciseOrTreeItem && 'title' in exerciseOrTreeItem) {
+            // It's an Exercise object directly
+            console.log('Received Exercise object directly');
+            targetExercise = exerciseOrTreeItem;
+          }
+        }
+
+        // Fall back to currentExercise if no valid exercise found
+        if (!targetExercise) {
+          targetExercise = currentExercise;
+        }
 
         if (!targetExercise) {
           vscode.window.showWarningMessage('Please select an exercise first');
@@ -113,8 +152,25 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-      vscode.commands.registerCommand('learnProgramming.showHint', async (exercise?: Exercise) => {
-        const targetExercise = exercise || currentExercise;
+      vscode.commands.registerCommand('learnProgramming.showHint', async (exerciseOrTreeItem?: any) => {
+        // Handle different argument types
+        let targetExercise: Exercise | undefined;
+
+        if (exerciseOrTreeItem) {
+          // Check if it's a TreeItem (from inline button) or Exercise (from other sources)
+          if ('exercise' in exerciseOrTreeItem) {
+            // It's an ExerciseTreeItem
+            targetExercise = exerciseOrTreeItem.exercise;
+          } else if ('id' in exerciseOrTreeItem && 'title' in exerciseOrTreeItem) {
+            // It's an Exercise object directly
+            targetExercise = exerciseOrTreeItem;
+          }
+        }
+
+        // Fall back to currentExercise if no valid exercise found
+        if (!targetExercise) {
+          targetExercise = currentExercise;
+        }
 
         if (!targetExercise) {
           vscode.window.showWarningMessage('Please select an exercise first');
@@ -172,6 +228,24 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+      vscode.commands.registerCommand('learnProgramming.runAllTests', async () => {
+        const course = courseManager.getCourse();
+        if (!course) {
+          vscode.window.showErrorMessage('No course loaded');
+          return;
+        }
+
+        const exercises = courseManager.getExercises();
+        if (exercises.length === 0) {
+          vscode.window.showInformationMessage('No exercises found');
+          return;
+        }
+
+        await batchTestRunner.runAllTests(exercises, course.language);
+      })
+    );
+
+    context.subscriptions.push(
       vscode.commands.registerCommand('learnProgramming.resetProgress', async () => {
         const confirm = await vscode.window.showWarningMessage(
           'Are you sure you want to reset all progress? This cannot be undone.',
@@ -216,6 +290,16 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 async function runTests(exercise: Exercise): Promise<void> {
+  // Debug: Log exercise object
+  console.log('runTests called with exercise:', exercise);
+  console.log('Exercise ID:', exercise?.id);
+  console.log('Exercise title:', exercise?.title);
+
+  if (!exercise) {
+    vscode.window.showErrorMessage('No exercise provided to runTests');
+    return;
+  }
+
   const course = courseManager.getCourse();
   if (!course) {
     return;
@@ -255,5 +339,8 @@ export function deactivate() {
   }
   if (webviewProvider) {
     webviewProvider.dispose();
+  }
+  if (batchTestRunner) {
+    batchTestRunner.dispose();
   }
 }
